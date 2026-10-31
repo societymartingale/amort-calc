@@ -66,6 +66,34 @@ fn encode_url_data(fd: &FormData) -> Option<String> {
         .map(|json| encode(&json).into_owned())
 }
 
+const REPO_URL: &str = "https://github.com/societymartingale/amort-calc";
+
+/// Footer text and optional commit link, from build-time env vars set in CI.
+fn build_info(tag: Option<&str>, sha: Option<&str>) -> (String, Option<String>) {
+    let tag = tag.map(str::trim).filter(|t| !t.is_empty());
+    let sha = sha.map(str::trim).filter(|s| !s.is_empty());
+    let id = match (tag, sha) {
+        (Some(t), _) => t.to_string(),
+        (None, Some(s)) => s.chars().take(7).collect(),
+        (None, None) => "dev".to_string(),
+    };
+    let url = sha.map(|s| format!("{REPO_URL}/commit/{s}"));
+    (format!("v{} ({id})", env!("CARGO_PKG_VERSION")), url)
+}
+
+#[component]
+fn Footer() -> impl IntoView {
+    let (label, url) = build_info(option_env!("APP_BUILD_TAG"), option_env!("APP_BUILD_SHA"));
+    view! {
+        <footer class="version">
+            {match url {
+                Some(href) => view! { <a href=href>{label}</a> }.into_any(),
+                None => label.into_any(),
+            }}
+        </footer>
+    }
+}
+
 #[component]
 pub fn Home() -> impl IntoView {
     view! {
@@ -135,6 +163,7 @@ fn App() -> impl IntoView {
         <div class="app">
             <Form raw=raw/>
             {results}
+            <Footer/>
         </div>
     }
 }
@@ -214,6 +243,28 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn build_info_variants() {
+        let v = env!("CARGO_PKG_VERSION");
+        assert_eq!(build_info(None, None), (format!("v{v} (dev)"), None));
+        assert_eq!(
+            build_info(Some(""), Some(" ")),
+            (format!("v{v} (dev)"), None)
+        );
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        assert_eq!(
+            build_info(None, Some(sha)),
+            (
+                format!("v{v} (0123456)"),
+                Some(format!("{REPO_URL}/commit/{sha}"))
+            )
+        );
+        assert_eq!(
+            build_info(Some("v1.2.0"), Some(sha)).0,
+            format!("v{v} (v1.2.0)")
+        );
+    }
 
     #[test]
     fn url_data_garbage_is_ignored() {
