@@ -23,10 +23,11 @@ pub fn checked_monthly_pmt(
     if int_monthly.is_zero() {
         return loan_amt.checked_div(Decimal::from(num_pmts));
     }
-    let growth = (Decimal::ONE + int_monthly).checked_powu(num_pmts)?;
-    let num = int_monthly.checked_mul(growth)?;
-    let den = growth.checked_sub(Decimal::ONE)?;
-    loan_amt.checked_mul(num)?.checked_div(den)
+    // P = L * i / (1 - (1 + i)^-n). Using the discount factor v = 1 / (1 + i)
+    // keeps v^n <= 1, so long terms at high rates cannot overflow.
+    let v = Decimal::ONE.checked_div(Decimal::ONE + int_monthly)?;
+    let den = Decimal::ONE.checked_sub(v.checked_powu(num_pmts)?)?;
+    loan_amt.checked_mul(int_monthly)?.checked_div(den)
 }
 
 /// Rounds a money amount to the cent, half away from zero (e.g. 0.005 -> 0.01).
@@ -36,19 +37,32 @@ pub fn round_cents(x: Decimal) -> Decimal {
 
 /// Builds the schedule in whole cents: the payment and each month's interest
 /// are rounded to the cent, and the final payment absorbs the rounding
-/// remainder so the ending balance is exactly zero.
+/// remainder so the ending balance is exactly zero. If a rounded-up payment
+/// pays the loan off early, the schedule ends at that (smaller) payment.
 pub fn calc_amort_sched(
     loan_amt: Decimal,
     int_monthly: Decimal,
     pmt_monthly: Decimal,
     num_pmts: u64,
 ) -> Vec<AmortRow> {
-    let pmt_monthly = round_cents(pmt_monthly);
-    let mut res: Vec<AmortRow> = vec![];
     let mut beg_bal = round_cents(loan_amt);
+    // Round half-up as usual, but if that payment would not cover more than
+    // the first month's interest (the loan would never amortize and end in a
+    // balloon), use the next cent up. (At 28 digits the exact payment can be
+    // a whole cent, so a plain ceiling is not enough.)
+    let mut pmt_monthly_r = round_cents(pmt_monthly);
+    if !int_monthly.is_zero() && pmt_monthly_r <= round_cents(beg_bal * int_monthly) {
+        pmt_monthly_r += Decimal::new(1, 2);
+    }
+    let pmt_monthly = pmt_monthly_r;
+    let mut res: Vec<AmortRow> = vec![];
     for p in 1..=num_pmts {
         let int_pmt = round_cents(beg_bal * int_monthly);
-        let (pmt, princ_pmt) = if p == num_pmts {
+        // Pay off on the last period, or earlier if a rounded-up payment
+        // would otherwise overpay and drive the balance negative.
+        let payoff = beg_bal + int_pmt;
+        let last = p == num_pmts || payoff <= pmt_monthly;
+        let (pmt, princ_pmt) = if last {
             (beg_bal + int_pmt, beg_bal)
         } else {
             (pmt_monthly, pmt_monthly - int_pmt)
@@ -62,6 +76,9 @@ pub fn calc_amort_sched(
             princ_pmt,
             end_bal,
         });
+        if last {
+            break;
+        }
         beg_bal = end_bal;
     }
     res
@@ -90,7 +107,7 @@ mod tests {
             checked_monthly_pmt(Decimal::ONE_THOUSAND, Decimal::ZERO, 0),
             None
         );
-        assert_eq!(checked_monthly_pmt(Decimal::MAX, Decimal::ONE, 1000), None);
+        assert_eq!(checked_monthly_pmt(Decimal::MAX, Decimal::TWO, 1000), None);
     }
 
     #[test]
@@ -254,5 +271,44 @@ mod tests {
         assert_eq!(sched.last().unwrap().end_bal, Decimal::ZERO);
         let princ: Decimal = sched.iter().map(|r| r.princ_pmt).sum();
         assert_eq!(princ, loan);
+    }
+
+    #[test]
+    fn rounded_up_payment_never_overpays() {
+        // 0.05 / 10 = 0.005 rounds up to 0.01, which would pay the loan off
+        // after 5 payments and then drive the balance negative.
+        let pmt = checked_monthly_pmt(d("0.05"), Decimal::ZERO, 10).unwrap();
+        let sched = calc_amort_sched(d("0.05"), Decimal::ZERO, pmt, 10);
+        assert!(sched.iter().all(|r| r.end_bal >= Decimal::ZERO));
+        assert!(sched.iter().all(|r| r.pmt >= Decimal::ZERO));
+        assert_eq!(
+            sched.iter().map(|r| r.princ_pmt).sum::<Decimal>(),
+            d("0.05")
+        );
+        assert_eq!(sched.last().unwrap().end_bal, Decimal::ZERO);
+    }
+
+    #[test]
+    fn high_rate_long_term_does_not_overflow() {
+        // 99% APR over 1200 months: (1 + i)^n overflows Decimal, but the
+        // payment is well defined (~ L * i).
+        let i = d("99") / d("1200");
+        let pmt = checked_monthly_pmt(d("100000"), i, 1200).unwrap();
+        assert_eq!(round_cents(pmt), d("8250.00"));
+    }
+
+    #[test]
+    fn payment_always_amortizes_without_balloon() {
+        // 99% APR over 1200 months: the exact payment is 8250.0000000..., so
+        // half-up rounding gives exactly the first month's interest and the
+        // balance would never fall, leaving a $108,250 balloon.
+        let (loan, i, n) = (d("100000"), d("99") / d("1200"), 1200);
+        let pmt = checked_monthly_pmt(loan, i, n).unwrap();
+        let sched = calc_amort_sched(loan, i, pmt, n);
+        let level = sched[0].pmt;
+        let last = sched.last().unwrap();
+        assert!(last.pmt <= level + d("0.01") * Decimal::from(n));
+        assert!(sched.iter().all(|r| r.end_bal < r.beg_bal));
+        assert_eq!(last.end_bal, Decimal::ZERO);
     }
 }
