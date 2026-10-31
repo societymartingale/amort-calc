@@ -7,7 +7,9 @@ pub fn get_date_vector(mut dt: NaiveDate, length: u64) -> Vec<NaiveDate> {
     }
     res.push(dt);
     for _ in 0..length - 1 {
-        let next = dt.checked_add_months(Months::new(1)).unwrap();
+        let Some(next) = dt.checked_add_months(Months::new(1)) else {
+            break;
+        };
         res.push(next);
         dt = next;
     }
