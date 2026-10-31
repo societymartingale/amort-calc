@@ -160,7 +160,7 @@ fn App() -> impl IntoView {
             let total_int = fin::total_interest(&rows);
             view! {
                 <p>
-                    Total interest paid over life of loan:
+                    "Total interest paid over life of loan: "
                     <span class="highlight">
                         {fmt_money(total_int)}
                     </span>
@@ -191,19 +191,19 @@ fn Form(raw: RwSignal<RawInput>) -> impl IntoView {
 
     view! {
         <form>
-            <label for=LOAN_AMT>Loan Amount: </label>
+            <label for=LOAN_AMT>"Loan Amount"</label>
             <input type=TEXT id=LOAN_AMT name=LOAN_AMT value=init.loan_amt size="12"
                 on:input=move |ev| raw.update(|r| r.loan_amt = event_target_value(&ev))
             />
-            <label for=INT_YEARLY_PCT>Annual Percentage Rate: </label>
+            <label for=INT_YEARLY_PCT>"Annual Percentage Rate"</label>
             <input type=TEXT id=INT_YEARLY_PCT name=INT_YEARLY_PCT value=init.int_yearly_pct size="4"
                 on:input=move |ev| raw.update(|r| r.int_yearly_pct = event_target_value(&ev))
             />
-            <label for=NUM_PMTS>Number of Monthly Payments: </label>
+            <label for=NUM_PMTS>"Number of Monthly Payments"</label>
             <input type=TEXT id=NUM_PMTS name=NUM_PMTS value=init.num_pmts size="4" maxlength="4"
                 on:input=move |ev| raw.update(|r| r.num_pmts = event_target_value(&ev))
             />
-            <label for="start">Loan start date: </label>
+            <label for="start">"Loan Start Date"</label>
             <input type="date" id="start" name="loan-start" value=init.start_date.to_string()
                 on:input=move |ev| {
                     if let Ok(d) = NaiveDate::parse_from_str(&event_target_value(&ev), "%Y-%m-%d") {
