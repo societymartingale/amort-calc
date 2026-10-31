@@ -29,22 +29,35 @@ pub fn checked_monthly_pmt(
     loan_amt.checked_mul(num)?.checked_div(den)
 }
 
+/// Rounds a money amount to the cent, half away from zero (e.g. 0.005 -> 0.01).
+pub fn round_cents(x: Decimal) -> Decimal {
+    x.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
+}
+
+/// Builds the schedule in whole cents: the payment and each month's interest
+/// are rounded to the cent, and the final payment absorbs the rounding
+/// remainder so the ending balance is exactly zero.
 pub fn calc_amort_sched(
     loan_amt: Decimal,
     int_monthly: Decimal,
     pmt_monthly: Decimal,
     num_pmts: u64,
 ) -> Vec<AmortRow> {
+    let pmt_monthly = round_cents(pmt_monthly);
     let mut res: Vec<AmortRow> = vec![];
-    let mut beg_bal = loan_amt;
-    for p in 1..num_pmts + 1 {
-        let int_pmt = beg_bal * int_monthly;
-        let princ_pmt = pmt_monthly - int_pmt;
+    let mut beg_bal = round_cents(loan_amt);
+    for p in 1..=num_pmts {
+        let int_pmt = round_cents(beg_bal * int_monthly);
+        let (pmt, princ_pmt) = if p == num_pmts {
+            (beg_bal + int_pmt, beg_bal)
+        } else {
+            (pmt_monthly, pmt_monthly - int_pmt)
+        };
         let end_bal = beg_bal - princ_pmt;
         res.push(AmortRow {
             period: p,
             beg_bal,
-            pmt: pmt_monthly,
+            pmt,
             int_pmt,
             princ_pmt,
             end_bal,
@@ -104,7 +117,7 @@ mod tests {
             res.first().unwrap().beg_bal,
             Decimal::from_f64(306000.0).unwrap()
         );
-        assert_eq!(res.last().unwrap().end_bal.round_dp(9), Decimal::zero());
+        assert_eq!(res.last().unwrap().end_bal, Decimal::zero());
     }
 
     fn d(s: &str) -> Decimal {
@@ -153,19 +166,18 @@ mod tests {
         let pmt = calc_monthly_pmt(loan, i, n);
         let sched = calc_amort_sched(loan, i, pmt, n);
         assert_eq!(sched.len(), n as usize);
-        assert_eq!(sched.last().unwrap().end_bal.round_dp(6), Decimal::ZERO);
+        assert_eq!(sched.last().unwrap().end_bal, Decimal::ZERO);
         let total_princ: Decimal = sched.iter().map(|r| r.princ_pmt).sum();
         let total_int: Decimal = sched.iter().map(|r| r.int_pmt).sum();
         let total_pmt: Decimal = sched.iter().map(|r| r.pmt).sum();
-        assert_eq!(total_princ.round_dp(6), loan);
-        assert_eq!(
-            (total_int + total_princ - total_pmt).round_dp(10),
-            Decimal::ZERO
-        );
-        assert_eq!(
-            (pmt * Decimal::from(n) - loan - total_int).round_dp(6),
-            Decimal::ZERO
-        );
+        assert_eq!(total_princ, loan);
+        assert_eq!(total_int + total_princ, total_pmt);
+        // the rounded total interest stays within a few dollars of pmt * n - loan
+        assert!((pmt * Decimal::from(n) - loan - total_int).abs() < d("5"));
+        // only the last payment differs from the level payment
+        let level = round_cents(pmt);
+        assert!(sched[..n as usize - 1].iter().all(|r| r.pmt == level));
+        assert!((sched.last().unwrap().pmt - level).abs() < d("5"));
     }
 
     #[test]
@@ -176,20 +188,53 @@ mod tests {
         let sched = calc_amort_sched(loan, i, pmt, 60);
         for (idx, r) in sched.iter().enumerate() {
             assert_eq!(r.period, idx as u64 + 1);
-            assert_eq!(r.int_pmt, r.beg_bal * i);
+            assert_eq!(r.int_pmt, round_cents(r.beg_bal * i));
             assert_eq!(r.int_pmt + r.princ_pmt, r.pmt);
             assert_eq!(r.end_bal, r.beg_bal - r.princ_pmt);
             if idx > 0 {
                 assert_eq!(r.beg_bal, sched[idx - 1].end_bal);
                 // interest shrinks and principal grows each period
-                assert!(r.int_pmt < sched[idx - 1].int_pmt);
-                assert!(r.princ_pmt > sched[idx - 1].princ_pmt);
+                assert!(r.int_pmt <= sched[idx - 1].int_pmt);
+                assert!(r.princ_pmt >= sched[idx - 1].princ_pmt);
             }
         }
     }
 
     #[test]
+    fn round_cents_is_half_away_from_zero() {
+        assert_eq!(round_cents(d("0.125")), d("0.13"));
+        assert_eq!(round_cents(d("0.135")), d("0.14"));
+        assert_eq!(round_cents(d("-0.125")), d("-0.13"));
+        assert_eq!(round_cents(d("0.1249")), d("0.12"));
+    }
+
+    #[test]
     fn empty_schedule_for_zero_payments() {
         assert!(calc_amort_sched(d("1000"), d("0.01"), d("100"), 0).is_empty());
+    }
+
+    #[test]
+    fn schedule_is_in_cents_and_ends_at_exactly_zero() {
+        // $1,000 at 0% over 3 payments: 333.33, 333.33, 333.34
+        let pmt = checked_monthly_pmt(d("1000"), Decimal::ZERO, 3).unwrap();
+        let sched = calc_amort_sched(d("1000"), Decimal::ZERO, pmt, 3);
+        let pmts: Vec<_> = sched.iter().map(|r| r.pmt).collect();
+        assert_eq!(pmts, vec![d("333.33"), d("333.33"), d("333.34")]);
+        assert_eq!(pmts.iter().sum::<Decimal>(), d("1000"));
+        assert_eq!(sched.last().unwrap().end_bal, Decimal::ZERO);
+
+        let loan = d("306000");
+        let i = d("3.5") / d("1200");
+        let pmt = checked_monthly_pmt(loan, i, 360).unwrap();
+        let sched = calc_amort_sched(loan, i, pmt, 360);
+        for r in &sched {
+            for v in [r.beg_bal, r.pmt, r.int_pmt, r.princ_pmt, r.end_bal] {
+                assert_eq!(v, v.round_dp(2), "row {} not in cents: {v}", r.period);
+            }
+        }
+        assert_eq!(sched[0].pmt, d("1374.08"));
+        assert_eq!(sched.last().unwrap().end_bal, Decimal::ZERO);
+        let princ: Decimal = sched.iter().map(|r| r.princ_pmt).sum();
+        assert_eq!(princ, loan);
     }
 }
