@@ -13,6 +13,11 @@
       }
 
       form {
+        display: grid;
+        grid-template-columns: max-content max-content;
+        column-gap: 12px;
+        row-gap: 8px;
+        align-items: center;
         padding-bottom: 16px;
       }
 
@@ -21,14 +26,12 @@
       }
 
       label {
-        margin-right: 0px;
         color: black;
         font-weight: bold;
       }
 
       input {
-        margin-right: 16px;
-        margin-bottom: 8px;
+        justify-self: start;
       }
 
       table {
