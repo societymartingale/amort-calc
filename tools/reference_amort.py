@@ -18,6 +18,8 @@ def ref(L, apr, n):
     L, i = D(L), D(apr) / 1200
     exact = L / n if i == 0 else L * i / (1 - (1 + i) ** -n)
     pmt = r2(exact); bal = r2(L); rows = []
+    if i and pmt <= r2(bal * i):  # would never amortize: next cent up
+        pmt += C
     for k in range(1, n + 1):
         it = r2(bal * i); payoff = bal + it
         if k == n or payoff <= pmt:

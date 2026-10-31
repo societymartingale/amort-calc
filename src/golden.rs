@@ -37,7 +37,7 @@ const REFERENCE: &[Golden] = &[
     Golden { loan: "25000", apr: "5.99", n: 60, pmt: "483.20", total_int: "3992.25", n_rows: 60, first: ["25000.00", "483.20", "124.79", "358.41", "24641.59"], last: ["481.05", "483.45", "2.40", "481.05", "0"] },
     Golden { loan: "1000", apr: "12", n: 1, pmt: "1010.00", total_int: "10.00", n_rows: 1, first: ["1000.00", "1010.00", "10.00", "1000.00", "0"], last: ["1000.00", "1010.00", "10.00", "1000.00", "0"] },
     Golden { loan: "100000", apr: "0.001", n: 360, pmt: "277.82", total_int: "15.03", n_rows: 360, first: ["100000.00", "277.82", "0.08", "277.74", "99722.26"], last: ["277.65", "277.65", "0.00", "277.65", "0"] },
-    Golden { loan: "100000", apr: "99", n: 1200, pmt: "8250.00", total_int: "9900000.00", n_rows: 1200, first: ["100000.00", "8250.00", "8250.00", "0.00", "100000.00"], last: ["100000.00", "108250.00", "8250.00", "100000.00", "0"] },
+    Golden { loan: "100000", apr: "99", n: 1200, pmt: "8250.01", total_int: "1324562.04", n_rows: 173, first: ["100000.00", "8250.01", "8250.00", "0.01", "99999.99"], last: ["5136.55", "5560.32", "423.77", "5136.55", "0"] },
     Golden { loan: "1000000000000", apr: "30", n: 360, pmt: "25003446738.53", total_int: "8001240826960.53", n_rows: 360, first: ["1000000000000.00", "25003446738.53", "25000000000.00", "3446738.53", "999996553261.47"], last: ["24393607637.33", "25003447828.26", "609840190.93", "24393607637.33", "0"] },
     Golden { loan: "5000", apr: "18", n: 24, pmt: "249.62", total_int: "990.87", n_rows: 24, first: ["5000.00", "249.62", "75.00", "174.62", "4825.38"], last: ["245.92", "249.61", "3.69", "245.92", "0"] },
     Golden { loan: "0.05", apr: "0", n: 10, pmt: "0.01", total_int: "0.00", n_rows: 5, first: ["0.05", "0.01", "0.00", "0.01", "0.04"], last: ["0.01", "0.01", "0.00", "0.01", "0"] },
@@ -79,7 +79,8 @@ fn matches_independent_reference() {
         let (loan, i) = (d(g.loan), d(g.apr) / d("1200"));
         let pmt = checked_monthly_pmt(loan, i, g.n).unwrap();
         let sched = calc_amort_sched(loan, i, pmt, g.n);
-        assert_eq!(round_cents(pmt), d(g.pmt), "payment {ctx}");
+        // the regular (level) payment is the one charged in month 1
+        assert_eq!(sched[0].pmt, d(g.pmt), "payment {ctx}");
         assert_eq!(
             total_interest(&sched),
             d(g.total_int),
