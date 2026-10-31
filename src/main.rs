@@ -11,6 +11,8 @@ use urlencoding::encode;
 
 mod date_util;
 mod fin;
+#[cfg(test)]
+mod golden;
 mod input;
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
