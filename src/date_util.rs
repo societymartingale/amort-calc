@@ -1,19 +1,15 @@
 use chrono::{Months, NaiveDate};
 
-pub fn get_date_vector(mut dt: NaiveDate, length: u64) -> Vec<NaiveDate> {
-    let mut res: Vec<NaiveDate> = vec![];
-    if length == 0 {
-        return res;
-    }
-    res.push(dt);
-    for _ in 0..length - 1 {
-        let Some(next) = dt.checked_add_months(Months::new(1)) else {
-            break;
-        };
-        res.push(next);
-        dt = next;
-    }
-    res
+/// Monthly dates `start + k months` for k in 0..length. Each date is computed
+/// from `start` (clamped to the end of shorter months), so a loan starting on
+/// the 31st stays on the last day of each month instead of drifting.
+pub fn get_date_vector(start: NaiveDate, length: u64) -> Vec<NaiveDate> {
+    (0..length)
+        .map_while(|k| {
+            let k = u32::try_from(k).ok()?;
+            start.checked_add_months(Months::new(k))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -38,7 +34,11 @@ mod tests {
         let dt = NaiveDate::from_ymd_opt(2024, 1, 31).unwrap();
         let res = get_date_vector(dt, 3);
         assert_eq!(res[1], NaiveDate::from_ymd_opt(2024, 2, 29).unwrap());
-        assert_eq!(res[2], NaiveDate::from_ymd_opt(2024, 3, 29).unwrap());
+        // computed from the start date, so no drift to the 29th
+        assert_eq!(res[2], NaiveDate::from_ymd_opt(2024, 3, 31).unwrap());
+        let res = get_date_vector(dt, 13);
+        assert_eq!(res[3], NaiveDate::from_ymd_opt(2024, 4, 30).unwrap());
+        assert_eq!(res[12], NaiveDate::from_ymd_opt(2025, 1, 31).unwrap());
     }
 
     #[test]
