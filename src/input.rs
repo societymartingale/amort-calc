@@ -16,12 +16,29 @@ pub struct LoanInput {
     pub num_pmts: u64,
 }
 
+/// Commas are only accepted as thousands separators ("1,234,567.89"), so a
+/// locale decimal comma like "6,5" is rejected instead of becoming 65.
+fn valid_commas(s: &str) -> bool {
+    let int_part = s.split('.').next().unwrap_or_default();
+    if s[int_part.len()..].contains(',') {
+        return false;
+    }
+    let digits = int_part.trim_start_matches(['+', '-']);
+    let mut groups = digits.split(',');
+    let first = groups.next().unwrap_or_default();
+    (1..=3).contains(&first.len()) && groups.all(|g| g.len() == 3)
+}
+
 fn parse_decimal(s: &str, field: &str) -> Result<Decimal, String> {
-    let s = s.trim().replace(',', "");
+    let s = s.trim();
     if s.is_empty() {
         return Err(format!("{field} is required."));
     }
-    Decimal::from_str(&s).map_err(|_| format!("{field} must be a number."))
+    let not_a_number = || format!("{field} must be a number.");
+    if s.contains(',') && !valid_commas(s) {
+        return Err(not_a_number());
+    }
+    Decimal::from_str(&s.replace(',', "")).map_err(|_| not_a_number())
 }
 
 /// Parses and validates the three numeric form fields.
@@ -35,6 +52,10 @@ pub fn parse_loan_input(
         return Err(format!(
             "Loan amount must be greater than 0 and at most {MAX_LOAN_AMT}."
         ));
+    }
+
+    if loan_amt.normalize().scale() > 2 {
+        return Err("Loan amount must be in whole cents (at most 2 decimal places).".into());
     }
 
     let int_yearly_pct = parse_decimal(rate_pct, "Annual percentage rate")?;
@@ -63,8 +84,14 @@ pub fn parse_loan_input(
         int_yearly_pct,
         num_pmts,
     };
-    if fin::checked_monthly_pmt(loan_amt, input.int_monthly(), num_pmts).is_none() {
-        return Err("These loan terms are too large to calculate.".into());
+    match fin::checked_monthly_pmt(loan_amt, input.int_monthly(), num_pmts) {
+        None => return Err("These loan terms are too large to calculate.".into()),
+        Some(p) if fin::round_cents(p).is_zero() => {
+            return Err(
+                "Loan amount is too small for this many payments (payment rounds to $0.00).".into(),
+            );
+        }
+        Some(_) => {}
     }
     Ok(input)
 }
@@ -173,11 +200,46 @@ mod tests {
     }
 
     #[test]
-    fn overflowing_terms_are_rejected_not_panicking() {
+    fn loan_amount_with_fractional_cents_is_rejected() {
         assert!(
-            parse_loan_input("1000000000000", "100", "1200")
+            parse_loan_input("1000.005", "6", "12")
                 .unwrap_err()
-                .contains("too large")
+                .contains("cents")
         );
+        assert!(parse_loan_input("1000.50", "6", "12").is_ok());
+        assert!(parse_loan_input("1000.5", "6", "12").is_ok());
+    }
+
+    #[test]
+    fn misplaced_commas_are_rejected() {
+        // locale decimal comma must not silently become 65%
+        assert!(parse_loan_input("1000", "6,5", "12").is_err());
+        // "1.000,50" (European format) must not become 1.0005
+        assert!(parse_loan_input("1.000,50", "6", "12").is_err());
+        assert!(parse_loan_input("1,00", "6", "12").is_err());
+        assert!(parse_loan_input("1,,000", "6", "12").is_err());
+        assert_eq!(
+            parse_loan_input("1,234,567.89", "6", "12")
+                .unwrap()
+                .loan_amt,
+            d("1234567.89")
+        );
+    }
+
+    #[test]
+    fn loan_too_small_for_term_is_rejected() {
+        // $1 over 1200 months at 0% rounds to a $0.00 payment
+        assert!(
+            parse_loan_input("1", "0", "1200")
+                .unwrap_err()
+                .contains("too small")
+        );
+        assert!(parse_loan_input("12", "0", "1200").is_ok());
+    }
+
+    #[test]
+    fn high_rate_long_term_is_accepted() {
+        assert!(parse_loan_input("100000", "99", "1200").is_ok());
+        assert!(parse_loan_input("1000000000000", "100", "1200").is_ok());
     }
 }
