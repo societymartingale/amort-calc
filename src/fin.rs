@@ -23,10 +23,11 @@ pub fn checked_monthly_pmt(
     if int_monthly.is_zero() {
         return loan_amt.checked_div(Decimal::from(num_pmts));
     }
-    let growth = (Decimal::ONE + int_monthly).checked_powu(num_pmts)?;
-    let num = int_monthly.checked_mul(growth)?;
-    let den = growth.checked_sub(Decimal::ONE)?;
-    loan_amt.checked_mul(num)?.checked_div(den)
+    // P = L * i / (1 - (1 + i)^-n). Using the discount factor v = 1 / (1 + i)
+    // keeps v^n <= 1, so long terms at high rates cannot overflow.
+    let v = Decimal::ONE.checked_div(Decimal::ONE + int_monthly)?;
+    let den = Decimal::ONE.checked_sub(v.checked_powu(num_pmts)?)?;
+    loan_amt.checked_mul(int_monthly)?.checked_div(den)
 }
 
 /// Rounds a money amount to the cent, half away from zero (e.g. 0.005 -> 0.01).
@@ -98,7 +99,7 @@ mod tests {
             checked_monthly_pmt(Decimal::ONE_THOUSAND, Decimal::ZERO, 0),
             None
         );
-        assert_eq!(checked_monthly_pmt(Decimal::MAX, Decimal::ONE, 1000), None);
+        assert_eq!(checked_monthly_pmt(Decimal::MAX, Decimal::TWO, 1000), None);
     }
 
     #[test]
@@ -272,7 +273,10 @@ mod tests {
         let sched = calc_amort_sched(d("0.05"), Decimal::ZERO, pmt, 10);
         assert!(sched.iter().all(|r| r.end_bal >= Decimal::ZERO));
         assert!(sched.iter().all(|r| r.pmt >= Decimal::ZERO));
-        assert_eq!(sched.iter().map(|r| r.princ_pmt).sum::<Decimal>(), d("0.05"));
+        assert_eq!(
+            sched.iter().map(|r| r.princ_pmt).sum::<Decimal>(),
+            d("0.05")
+        );
         assert_eq!(sched.last().unwrap().end_bal, Decimal::ZERO);
     }
 
