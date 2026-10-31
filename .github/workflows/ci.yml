@@ -31,7 +31,13 @@ jobs:
       - name: Install Trunk
         run: curl -sSfL "https://github.com/trunk-rs/trunk/releases/download/${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" | tar xz -C ~/.cargo/bin
       - name: Build site
-        run: trunk build --release --locked
+        env:
+          APP_BUILD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          git fetch --tags --quiet origin || true
+          export APP_BUILD_TAG="$(git tag --points-at "$APP_BUILD_SHA" | sort -V | tail -n1)"
+          echo "Building $APP_BUILD_SHA ${APP_BUILD_TAG:-(untagged)}"
+          trunk build --release --locked
       - name: Upload site
         uses: actions/upload-artifact@v7
         with:
