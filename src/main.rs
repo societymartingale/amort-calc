@@ -33,6 +33,9 @@ struct RawInput {
 impl RawInput {
     fn parse(&self) -> Result<FormData, String> {
         let li = input::parse_loan_input(&self.loan_amt, &self.int_yearly_pct, &self.num_pmts)?;
+        if date_util::payment_dates(self.start_date, li.num_pmts).len() as u64 != li.num_pmts {
+            return Err("Loan start date is too far in the future.".into());
+        }
         Ok(FormData {
             loan_amt: li.loan_amt,
             int_yearly_pct: li.int_yearly_pct,
@@ -64,6 +67,13 @@ fn encode_url_data(fd: &FormData) -> Option<String> {
     serde_json::to_string(fd)
         .ok()
         .map(|json| encode(&json).into_owned())
+}
+
+/// Formats money as e.g. "1,234,567.50" / "-1,234.57" (half away from zero).
+fn fmt_money(x: Decimal) -> String {
+    let x = fin::round_cents(x);
+    let x = if x.is_zero() { Decimal::ZERO } else { x };
+    format!("{x:.2}").separate_with_commas()
 }
 
 const REPO_URL: &str = "https://github.com/societymartingale/amort-calc";
@@ -150,7 +160,7 @@ fn App() -> impl IntoView {
                 <p>
                     Total interest paid over life of loan:
                     <span class="highlight">
-                        {format!("{:.2}", total_int).separate_with_commas()}
+                        {fmt_money(total_int)}
                     </span>
                 </p>
                 <AmortSchedTable rows=rows dates=dates/>
@@ -226,11 +236,11 @@ fn AmortSchedTable(rows: Vec<fin::AmortRow>, dates: Vec<NaiveDate>) -> impl Into
                 <tr>
                     <td>{r.period}</td>
                     <td>{usize::try_from(r.period - 1).ok().and_then(|i| dates.get(i)).map(|d| d.to_string()).unwrap_or_default()}</td>
-                    <td>{format!("{:.2}", r.beg_bal.round_dp(2)).separate_with_commas()}</td>
-                    <td>{format!("{:.2}", r.pmt.round_dp(2)).separate_with_commas()}</td>
-                    <td>{format!("{:.2}", r.int_pmt.round_dp(2)).separate_with_commas()}</td>
-                    <td>{format!("{:.2}", r.princ_pmt.round_dp(2)).separate_with_commas()}</td>
-                    <td>{format!("{:.2}", r.end_bal.round_dp(2)).separate_with_commas()}</td>
+                    <td>{fmt_money(r.beg_bal)}</td>
+                    <td>{fmt_money(r.pmt)}</td>
+                    <td>{fmt_money(r.int_pmt)}</td>
+                    <td>{fmt_money(r.princ_pmt)}</td>
+                    <td>{fmt_money(r.end_bal)}</td>
                 </tr>}).collect::<Vec<_>>()}
         </table>
     }
@@ -264,6 +274,40 @@ mod tests {
             build_info(Some("v1.2.0"), Some(sha)).0,
             format!("v{v} (v1.2.0)")
         );
+    }
+
+    #[test]
+    fn start_date_too_far_in_future_is_rejected() {
+        let raw = RawInput {
+            loan_amt: "1000".into(),
+            int_yearly_pct: "5".into(),
+            num_pmts: "360".into(),
+            start_date: NaiveDate::MAX,
+        };
+        assert!(raw.parse().unwrap_err().contains("date"));
+        let ok = RawInput {
+            start_date: NaiveDate::from_ymd_opt(9999, 12, 31).unwrap(),
+            ..raw
+        };
+        assert!(ok.parse().is_ok());
+    }
+
+    #[test]
+    fn money_formatting() {
+        assert_eq!(
+            fmt_money(Decimal::from_str("1234567.5").unwrap()),
+            "1,234,567.50"
+        );
+        assert_eq!(
+            fmt_money(Decimal::from_str("-1234.567").unwrap()),
+            "-1,234.57"
+        );
+        assert_eq!(
+            fmt_money(Decimal::from_str("1000000000000").unwrap()),
+            "1,000,000,000,000.00"
+        );
+        assert_eq!(fmt_money(Decimal::from_str("-0.001").unwrap()), "0.00");
+        assert_eq!(fmt_money(Decimal::from_str("0.125").unwrap()), "0.13");
     }
 
     #[test]
