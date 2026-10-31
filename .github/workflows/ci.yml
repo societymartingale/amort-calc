@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # rust-toolchain.toml pins stable + rustfmt, clippy and the wasm32 target
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy (wasm32)
+        run: cargo clippy --all-targets --target wasm32-unknown-unknown -- -D warnings
+      - name: Clippy (host)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --locked

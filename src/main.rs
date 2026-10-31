@@ -88,7 +88,7 @@ fn App() -> impl IntoView {
         start_date,
     ));
     let int_monthly =
-        Memo::new(move |_| (form_data().int_yearly_pct) / Decimal::from_str("1200").unwrap());
+        Memo::new(move |_| form_data.get().int_yearly_pct / Decimal::from_str("1200").unwrap());
     let pmt_monthly = Memo::new(move |_| {
         fin::calc_monthly_pmt(
             form_data.get().loan_amt,
@@ -105,8 +105,8 @@ fn App() -> impl IntoView {
         )
     });
     let total_int = Memo::new(move |_| {
-        pmt_monthly() * Decimal::from_str(&form_data().num_pmts.to_string()).unwrap()
-            - form_data().loan_amt
+        pmt_monthly.get() * Decimal::from_str(&form_data.get().num_pmts.to_string()).unwrap()
+            - form_data.get().loan_amt
     });
 
     let dates: Memo<Vec<NaiveDate>> = Memo::new(move |_| {
@@ -124,7 +124,7 @@ fn App() -> impl IntoView {
             <p>
                 Total interest paid over life of loan:
                 <span class="highlight">
-                    {move || format!("{:.2}", total_int()).separate_with_commas()}
+                    {move || format!("{:.2}", total_int.get()).separate_with_commas()}
                 </span>
             </p>
             <AmortSchedTable rows=amort_sched dates=dates/>
@@ -165,8 +165,8 @@ fn Form(
                         loan_amt: Decimal::from_str(&event_target_value(&ev)).unwrap(),
                         ..form_data.get_untracked()
                     };
-                    set_form_data(fd);
-                    set_url_data(Some(encode(&serde_json::to_string(&fd).unwrap()).into_owned()));
+                    set_form_data.set(fd);
+                    set_url_data.set(Some(encode(&serde_json::to_string(&fd).unwrap()).into_owned()));
                 }
             />
             <label for=INT_YEARLY_PCT>Annual Percentage Rate: </label>
@@ -176,8 +176,8 @@ fn Form(
                         int_yearly_pct: Decimal::from_str(&event_target_value(&ev)).unwrap(),
                         ..form_data.get_untracked()
                     };
-                    set_form_data(fd);
-                    set_url_data(Some(encode(&serde_json::to_string(&fd).unwrap()).into_owned()));
+                    set_form_data.set(fd);
+                    set_url_data.set(Some(encode(&serde_json::to_string(&fd).unwrap()).into_owned()));
                 }
             />
             <label for=NUM_PMTS>Number of Monthly Payments: </label>
@@ -187,8 +187,8 @@ fn Form(
                         num_pmts: event_target_value(&ev).parse::<u64>().unwrap(),
                         ..form_data.get_untracked()
                     };
-                    set_form_data(fd);
-                    set_url_data(Some(encode(&serde_json::to_string(&fd).unwrap()).into_owned()));
+                    set_form_data.set(fd);
+                    set_url_data.set(Some(encode(&serde_json::to_string(&fd).unwrap()).into_owned()));
                 }
             />
             <label for="start">Start date: </label>
@@ -197,8 +197,8 @@ fn Form(
                     let date_str = event_target_value(&ev);
                     if let Ok(start_date) = NaiveDate::parse_from_str(&date_str, "%Y-%m-%d") {
                         let fd = FormData {start_date, ..form_data.get_untracked()};
-                        set_form_data(fd);
-                        set_url_data(Some(encode(&serde_json::to_string(&fd).unwrap()).into_owned()));
+                        set_form_data.set(fd);
+                        set_url_data.set(Some(encode(&serde_json::to_string(&fd).unwrap()).into_owned()));
                     }
                 }
             />
@@ -224,11 +224,11 @@ fn AmortSchedTable(rows: Memo<Vec<fin::AmortRow>>, dates: Memo<Vec<NaiveDate>>) 
                     .map(|c| view! { <th>{c}</th>})
                     .collect::<Vec<_>>()}
            </tr>
-       {move || rows().into_iter().map(
+       {move || rows.get().into_iter().map(
             |r| view! {
                 <tr>
                     <td>{r.period}</td>
-                    <td>{dates()[usize::try_from(r.period -1).unwrap()].to_string()}</td>
+                    <td>{dates.get()[usize::try_from(r.period -1).unwrap()].to_string()}</td>
                     <td>{format!("{:.2}", r.beg_bal.round_dp(2)).separate_with_commas()}</td>
                     <td>{format!("{:.2}", r.pmt.round_dp(2)).separate_with_commas()}</td>
                     <td>{format!("{:.2}", r.int_pmt.round_dp(2)).separate_with_commas()}</td>
