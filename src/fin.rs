@@ -36,7 +36,8 @@ pub fn round_cents(x: Decimal) -> Decimal {
 
 /// Builds the schedule in whole cents: the payment and each month's interest
 /// are rounded to the cent, and the final payment absorbs the rounding
-/// remainder so the ending balance is exactly zero.
+/// remainder so the ending balance is exactly zero. If a rounded-up payment
+/// pays the loan off early, the schedule ends at that (smaller) payment.
 pub fn calc_amort_sched(
     loan_amt: Decimal,
     int_monthly: Decimal,
@@ -48,7 +49,11 @@ pub fn calc_amort_sched(
     let mut beg_bal = round_cents(loan_amt);
     for p in 1..=num_pmts {
         let int_pmt = round_cents(beg_bal * int_monthly);
-        let (pmt, princ_pmt) = if p == num_pmts {
+        // Pay off on the last period, or earlier if a rounded-up payment
+        // would otherwise overpay and drive the balance negative.
+        let payoff = beg_bal + int_pmt;
+        let last = p == num_pmts || payoff <= pmt_monthly;
+        let (pmt, princ_pmt) = if last {
             (beg_bal + int_pmt, beg_bal)
         } else {
             (pmt_monthly, pmt_monthly - int_pmt)
@@ -62,6 +67,9 @@ pub fn calc_amort_sched(
             princ_pmt,
             end_bal,
         });
+        if last {
+            break;
+        }
         beg_bal = end_bal;
     }
     res
@@ -254,5 +262,26 @@ mod tests {
         assert_eq!(sched.last().unwrap().end_bal, Decimal::ZERO);
         let princ: Decimal = sched.iter().map(|r| r.princ_pmt).sum();
         assert_eq!(princ, loan);
+    }
+
+    #[test]
+    fn rounded_up_payment_never_overpays() {
+        // 0.05 / 10 = 0.005 rounds up to 0.01, which would pay the loan off
+        // after 5 payments and then drive the balance negative.
+        let pmt = checked_monthly_pmt(d("0.05"), Decimal::ZERO, 10).unwrap();
+        let sched = calc_amort_sched(d("0.05"), Decimal::ZERO, pmt, 10);
+        assert!(sched.iter().all(|r| r.end_bal >= Decimal::ZERO));
+        assert!(sched.iter().all(|r| r.pmt >= Decimal::ZERO));
+        assert_eq!(sched.iter().map(|r| r.princ_pmt).sum::<Decimal>(), d("0.05"));
+        assert_eq!(sched.last().unwrap().end_bal, Decimal::ZERO);
+    }
+
+    #[test]
+    fn high_rate_long_term_does_not_overflow() {
+        // 99% APR over 1200 months: (1 + i)^n overflows Decimal, but the
+        // payment is well defined (~ L * i).
+        let i = d("99") / d("1200");
+        let pmt = checked_monthly_pmt(d("100000"), i, 1200).unwrap();
+        assert_eq!(round_cents(pmt), d("8250.00"));
     }
 }
