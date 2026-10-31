@@ -144,7 +144,7 @@ fn App() -> impl IntoView {
             let pmt =
                 fin::checked_monthly_pmt(fd.loan_amt, int_monthly, fd.num_pmts).unwrap_or_default();
             let rows = fin::calc_amort_sched(fd.loan_amt, int_monthly, pmt, fd.num_pmts);
-            let dates = date_util::get_date_vector(fd.start_date, fd.num_pmts);
+            let dates = date_util::payment_dates(fd.start_date, fd.num_pmts);
             let total_int = fin::total_interest(&rows);
             view! {
                 <p>
@@ -191,7 +191,7 @@ fn Form(raw: RwSignal<RawInput>) -> impl IntoView {
             <input type=TEXT id=NUM_PMTS name=NUM_PMTS value=init.num_pmts size="4" maxlength="4"
                 on:input=move |ev| raw.update(|r| r.num_pmts = event_target_value(&ev))
             />
-            <label for="start">Start date: </label>
+            <label for="start">Loan start date: </label>
             <input type="date" id="start" name="loan-start" value=init.start_date.to_string()
                 on:input=move |ev| {
                     if let Ok(d) = NaiveDate::parse_from_str(&event_target_value(&ev), "%Y-%m-%d") {
@@ -207,7 +207,7 @@ fn Form(raw: RwSignal<RawInput>) -> impl IntoView {
 fn AmortSchedTable(rows: Vec<fin::AmortRow>, dates: Vec<NaiveDate>) -> impl IntoView {
     const COLS: [&str; 7] = [
         "Period",
-        "Date",
+        "Payment Date",
         "Beginning Balance",
         "Payment",
         "Interest",
