@@ -57,4 +57,24 @@ mod tests {
         assert_eq!(res[0], ymd(2024, 4, 1));
         assert_eq!(res[359], ymd(2054, 3, 1));
     }
+
+    #[test]
+    fn leap_day_and_year_rollover() {
+        // Feb 29 start: Feb 28 in non-leap years, Feb 29 again in 2028
+        let res = payment_dates(ymd(2024, 2, 29), 48);
+        assert_eq!(res[0], ymd(2024, 3, 29));
+        assert_eq!(res[11], ymd(2025, 2, 28));
+        assert_eq!(res[47], ymd(2028, 2, 29));
+        // Dec -> Jan rollover
+        let res = payment_dates(ymd(2024, 11, 30), 3);
+        assert_eq!(
+            res,
+            vec![ymd(2024, 12, 30), ymd(2025, 1, 30), ymd(2025, 2, 28)]
+        );
+    }
+
+    #[test]
+    fn stops_at_the_end_of_the_calendar() {
+        assert!(payment_dates(NaiveDate::MAX, 3).is_empty());
+    }
 }
