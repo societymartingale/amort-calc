@@ -145,7 +145,7 @@ fn App() -> impl IntoView {
                 fin::checked_monthly_pmt(fd.loan_amt, int_monthly, fd.num_pmts).unwrap_or_default();
             let rows = fin::calc_amort_sched(fd.loan_amt, int_monthly, pmt, fd.num_pmts);
             let dates = date_util::get_date_vector(fd.start_date, fd.num_pmts);
-            let total_int = pmt * Decimal::from(fd.num_pmts) - fd.loan_amt;
+            let total_int = fin::total_interest(&rows);
             view! {
                 <p>
                     Total interest paid over life of loan:

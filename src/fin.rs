@@ -67,6 +67,11 @@ pub fn calc_amort_sched(
     res
 }
 
+/// Total interest: the sum of the (rounded) interest column.
+pub fn total_interest(sched: &[AmortRow]) -> Decimal {
+    sched.iter().map(|r| r.int_pmt).sum()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,6 +203,19 @@ mod tests {
                 assert!(r.princ_pmt >= sched[idx - 1].princ_pmt);
             }
         }
+    }
+
+    #[test]
+    fn total_interest_is_sum_of_rounded_interest_column() {
+        let loan = d("306000");
+        let i = d("3.5") / d("1200");
+        let pmt = checked_monthly_pmt(loan, i, 360).unwrap();
+        let sched = calc_amort_sched(loan, i, pmt, 360);
+        let expected: Decimal = sched.iter().map(|r| r.int_pmt).sum();
+        assert_eq!(total_interest(&sched), expected);
+        // pmt * n - loan disagrees with the schedule the user sees
+        assert_ne!(pmt * Decimal::from(360) - loan, expected);
+        assert_eq!(total_interest(&[]), Decimal::ZERO);
     }
 
     #[test]
