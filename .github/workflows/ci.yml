@@ -10,6 +10,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  TRUNK_VERSION: v0.22.1
 
 jobs:
   check:
@@ -27,3 +28,43 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Test
         run: cargo test --locked
+      - name: Install Trunk
+        run: curl -sSfL "https://github.com/trunk-rs/trunk/releases/download/${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" | tar xz -C ~/.cargo/bin
+      - name: Build site
+        env:
+          APP_BUILD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          git fetch --tags --quiet origin || true
+          export APP_BUILD_TAG="$(git tag --points-at "$APP_BUILD_SHA" | sort -V | tail -n1)"
+          echo "Building $APP_BUILD_SHA ${APP_BUILD_TAG:-(untagged)}"
+          trunk build --release --locked
+      - name: Upload site
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  deploy:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: cloudflare-pages
+      url: https://amort-calc.pages.dev
+    permissions:
+      contents: read
+    concurrency:
+      group: cloudflare-pages-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=amort-calc --branch=main
