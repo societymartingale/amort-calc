@@ -1,0 +1,5 @@
+[build]
+target = "index.html"
+dist = "dist"
+# Served from the root of the Cloudflare Pages domain.
+public_url = "/"
