@@ -45,7 +45,7 @@ impl RawInput {
 impl From<FormData> for RawInput {
     fn from(fd: FormData) -> Self {
         Self {
-            loan_amt: format!("{:.0}", fd.loan_amt),
+            loan_amt: fd.loan_amt.normalize().to_string(),
             int_yearly_pct: fd.int_yearly_pct.normalize().to_string(),
             num_pmts: fd.num_pmts.to_string(),
             start_date: fd.start_date,
@@ -264,6 +264,26 @@ mod tests {
             build_info(Some("v1.2.0"), Some(sha)).0,
             format!("v{v} (v1.2.0)")
         );
+    }
+
+    #[test]
+    fn shared_link_keeps_cents() {
+        let fd = FormData {
+            loan_amt: Decimal::from_str("250000.75").unwrap(),
+            int_yearly_pct: Decimal::from_str("6.125").unwrap(),
+            num_pmts: 360,
+            start_date: NaiveDate::from_ymd_opt(2025, 6, 1).unwrap(),
+        };
+        let raw = RawInput::from(fd);
+        assert_eq!(raw.loan_amt, "250000.75");
+        assert_eq!(raw.parse(), Ok(fd));
+        assert_eq!(decode_url_data(&encode_url_data(&fd).unwrap()), Some(fd));
+        // whole amounts stay clean in the form
+        let whole = FormData {
+            loan_amt: Decimal::from_str("500000.00").unwrap(),
+            ..fd
+        };
+        assert_eq!(RawInput::from(whole).loan_amt, "500000");
     }
 
     #[test]
