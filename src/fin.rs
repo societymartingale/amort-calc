@@ -10,15 +10,23 @@ pub struct AmortRow {
     pub end_bal: Decimal,
 }
 
-pub fn calc_monthly_pmt(loan_amt: Decimal, int_monthly: Decimal, num_pmts: u64) -> Decimal {
-    if int_monthly.is_zero() {
-        return loan_amt / Decimal::from(num_pmts);
+/// Level monthly payment for a fully amortizing loan. Returns `None` instead
+/// of panicking on overflow or a zero payment count.
+pub fn checked_monthly_pmt(
+    loan_amt: Decimal,
+    int_monthly: Decimal,
+    num_pmts: u64,
+) -> Option<Decimal> {
+    if num_pmts == 0 {
+        return None;
     }
-    let n = num_pmts;
-    let i = int_monthly;
-    let num = i * (Decimal::one() + i).powu(n);
-    let den = (Decimal::one() + i).powu(n) - Decimal::one();
-    loan_amt * num / den
+    if int_monthly.is_zero() {
+        return loan_amt.checked_div(Decimal::from(num_pmts));
+    }
+    let growth = (Decimal::ONE + int_monthly).checked_powu(num_pmts)?;
+    let num = int_monthly.checked_mul(growth)?;
+    let den = growth.checked_sub(Decimal::ONE)?;
+    loan_amt.checked_mul(num)?.checked_div(den)
 }
 
 pub fn calc_amort_sched(
@@ -49,6 +57,23 @@ pub fn calc_amort_sched(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn calc_monthly_pmt(loan_amt: Decimal, int_monthly: Decimal, num_pmts: u64) -> Decimal {
+        checked_monthly_pmt(loan_amt, int_monthly, num_pmts).unwrap()
+    }
+
+    #[test]
+    fn checked_pmt_rejects_zero_payments_and_overflow() {
+        assert_eq!(
+            checked_monthly_pmt(Decimal::ONE_THOUSAND, Decimal::ONE, 0),
+            None
+        );
+        assert_eq!(
+            checked_monthly_pmt(Decimal::ONE_THOUSAND, Decimal::ZERO, 0),
+            None
+        );
+        assert_eq!(checked_monthly_pmt(Decimal::MAX, Decimal::ONE, 1000), None);
+    }
 
     #[test]
     fn test_calc_monthly_pmt() {
