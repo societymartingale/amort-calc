@@ -18,7 +18,9 @@
         column-gap: 12px;
         row-gap: 8px;
         align-items: center;
-        padding-bottom: 16px;
+        padding-bottom: 20px;
+        margin-bottom: 20px;
+        border-bottom: 2px solid turquoise;
       }
 
       p {
@@ -72,6 +74,33 @@
       .highlight {
         background: lightyellow;
         padding: 2px;
+      }
+      .summary {
+        display: grid;
+        grid-template-columns: max-content max-content;
+        column-gap: 12px;
+        row-gap: 8px;
+        padding-bottom: 16px;
+      }
+
+      .summary .label {
+        font-weight: bold;
+      }
+
+      .toggle {
+        padding-bottom: 12px;
+      }
+
+      .toggle button {
+        padding: 6px 14px;
+        border: 1px solid black;
+        background: white;
+        cursor: pointer;
+      }
+
+      .toggle button.active {
+        background-color: turquoise;
+        font-weight: bold;
       }
     </style>
   </head>

@@ -14,6 +14,7 @@ mod fin;
 #[cfg(test)]
 mod golden;
 mod input;
+mod summary;
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct FormData {
@@ -149,6 +150,7 @@ fn App() -> impl IntoView {
         }
     });
 
+    let yearly = RwSignal::new(false);
     let results = move || match parsed.get() {
         Err(msg) => view! { <p class="error" role="alert">{msg}</p> }.into_any(),
         Ok(fd) => {
@@ -157,15 +159,16 @@ fn App() -> impl IntoView {
                 fin::checked_monthly_pmt(fd.loan_amt, int_monthly, fd.num_pmts).unwrap_or_default();
             let rows = fin::calc_amort_sched(fd.loan_amt, int_monthly, pmt, fd.num_pmts);
             let dates = date_util::payment_dates(fd.start_date, fd.num_pmts);
-            let total_int = fin::total_interest(&rows);
+            let summary = summary::summarize(&rows, &dates);
+            let years = summary::yearly_totals(&rows, &dates);
             view! {
-                <p>
-                    "Total interest paid over life of loan: "
-                    <span class="highlight">
-                        {fmt_money(total_int)}
-                    </span>
-                </p>
-                <AmortSchedTable rows=rows dates=dates/>
+                {summary.map(|s| view! { <SummaryPanel s=s/> })}
+                <ViewToggle yearly=yearly/>
+                {move || if yearly.get() {
+                    view! { <YearlyTable years=years.clone()/> }.into_any()
+                } else {
+                    view! { <AmortSchedTable rows=rows.clone() dates=dates.clone()/> }.into_any()
+                }}
             }
             .into_any()
         }
@@ -212,6 +215,66 @@ fn Form(raw: RwSignal<RawInput>) -> impl IntoView {
                 }
             />
         </form>
+    }
+}
+
+#[component]
+fn SummaryPanel(s: summary::LoanSummary) -> impl IntoView {
+    let payoff = s.payoff_date.map(|d| d.to_string()).unwrap_or_default();
+    view! {
+        <div class="summary">
+            <span class="label">"Monthly Payment"</span>
+            <span class="highlight">{fmt_money(s.pmt)}</span>
+            <span class="label">"Payoff Date"</span>
+            <span class="highlight">{payoff}</span>
+            <span class="label">"Total Paid"</span>
+            <span class="highlight">{fmt_money(s.total_paid)}</span>
+            <span class="label">"Total Interest"</span>
+            <span class="highlight">{fmt_money(s.total_interest)}</span>
+        </div>
+    }
+}
+
+#[component]
+fn ViewToggle(yearly: RwSignal<bool>) -> impl IntoView {
+    view! {
+        <div class="toggle" role="group" aria-label="Schedule view">
+            <button type="button" aria-pressed=move || yearly.get().to_string()
+                class:active=move || yearly.get()
+                on:click=move |_| yearly.set(true)>"Yearly"</button>
+            <button type="button" aria-pressed=move || (!yearly.get()).to_string()
+                class:active=move || !yearly.get()
+                on:click=move |_| yearly.set(false)>"Monthly"</button>
+        </div>
+    }
+}
+
+#[component]
+fn YearlyTable(years: Vec<summary::YearRow>) -> impl IntoView {
+    const COLS: [&str; 6] = [
+        "Year",
+        "Payments",
+        "Principal",
+        "Interest",
+        "Total Paid",
+        "Ending Balance",
+    ];
+    view! {
+        <table>
+            <tr>
+                {COLS.into_iter().map(|c| view! { <th>{c}</th> }).collect::<Vec<_>>()}
+            </tr>
+            {years.into_iter().map(|y| view! {
+                <tr>
+                    <td>{y.year}</td>
+                    <td>{y.num_pmts}</td>
+                    <td>{fmt_money(y.princ)}</td>
+                    <td>{fmt_money(y.int)}</td>
+                    <td>{fmt_money(y.total)}</td>
+                    <td>{fmt_money(y.end_bal)}</td>
+                </tr>
+            }).collect::<Vec<_>>()}
+        </table>
     }
 }
 
