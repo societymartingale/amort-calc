@@ -45,9 +45,17 @@ pub fn calc_amort_sched(
     pmt_monthly: Decimal,
     num_pmts: u64,
 ) -> Vec<AmortRow> {
-    let pmt_monthly = round_cents(pmt_monthly);
-    let mut res: Vec<AmortRow> = vec![];
     let mut beg_bal = round_cents(loan_amt);
+    // Round half-up as usual, but if that payment would not cover more than
+    // the first month's interest (the loan would never amortize and end in a
+    // balloon), use the next cent up. (At 28 digits the exact payment can be
+    // a whole cent, so a plain ceiling is not enough.)
+    let mut pmt_monthly_r = round_cents(pmt_monthly);
+    if !int_monthly.is_zero() && pmt_monthly_r <= round_cents(beg_bal * int_monthly) {
+        pmt_monthly_r += Decimal::new(1, 2);
+    }
+    let pmt_monthly = pmt_monthly_r;
+    let mut res: Vec<AmortRow> = vec![];
     for p in 1..=num_pmts {
         let int_pmt = round_cents(beg_bal * int_monthly);
         // Pay off on the last period, or earlier if a rounded-up payment
@@ -287,5 +295,20 @@ mod tests {
         let i = d("99") / d("1200");
         let pmt = checked_monthly_pmt(d("100000"), i, 1200).unwrap();
         assert_eq!(round_cents(pmt), d("8250.00"));
+    }
+
+    #[test]
+    fn payment_always_amortizes_without_balloon() {
+        // 99% APR over 1200 months: the exact payment is 8250.0000000..., so
+        // half-up rounding gives exactly the first month's interest and the
+        // balance would never fall, leaving a $108,250 balloon.
+        let (loan, i, n) = (d("100000"), d("99") / d("1200"), 1200);
+        let pmt = checked_monthly_pmt(loan, i, n).unwrap();
+        let sched = calc_amort_sched(loan, i, pmt, n);
+        let level = sched[0].pmt;
+        let last = sched.last().unwrap();
+        assert!(last.pmt <= level + d("0.01") * Decimal::from(n));
+        assert!(sched.iter().all(|r| r.end_bal < r.beg_bal));
+        assert_eq!(last.end_bal, Decimal::ZERO);
     }
 }
