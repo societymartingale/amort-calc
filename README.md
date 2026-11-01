@@ -46,3 +46,7 @@ trunk build --release  # optimized build into dist/
 GitHub Actions runs formatting, clippy, tests and a release build on every push and PR.
 Pull requests get a Cloudflare Pages preview deployment (linked in a PR comment), and
 merges to `main` deploy automatically to <https://amort-calc.pages.dev>.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
