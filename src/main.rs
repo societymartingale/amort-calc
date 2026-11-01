@@ -15,6 +15,7 @@ mod fin;
 mod golden;
 mod input;
 mod summary;
+mod theme;
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct FormData {
@@ -92,6 +93,53 @@ fn build_info(tag: Option<&str>, sha: Option<&str>) -> (String, Option<String>) 
     };
     let url = sha.map(|s| format!("{REPO_URL}/commit/{s}"));
     (format!("v{} ({id})", env!("CARGO_PKG_VERSION")), url)
+}
+
+fn read_stored_theme() -> theme::Theme {
+    let v = window()
+        .local_storage()
+        .ok()
+        .flatten()
+        .and_then(|s| s.get_item(theme::STORAGE_KEY).ok().flatten());
+    theme::Theme::from_stored(v.as_deref())
+}
+
+fn apply_theme(t: theme::Theme) {
+    let root = document().document_element();
+    let storage = window().local_storage().ok().flatten();
+    match t.stored() {
+        Some(v) => {
+            if let Some(r) = root {
+                let _ = r.set_attribute("data-theme", v);
+            }
+            if let Some(s) = storage {
+                let _ = s.set_item(theme::STORAGE_KEY, v);
+            }
+        }
+        None => {
+            if let Some(r) = root {
+                let _ = r.remove_attribute("data-theme");
+            }
+            if let Some(s) = storage {
+                let _ = s.remove_item(theme::STORAGE_KEY);
+            }
+        }
+    }
+}
+
+#[component]
+fn ThemeToggle() -> impl IntoView {
+    let current = RwSignal::new(read_stored_theme());
+    view! {
+        <button type="button" class="theme-toggle"
+            aria-label=move || current.get().label()
+            title=move || current.get().label()
+            on:click=move |_| {
+                let n = current.get_untracked().next();
+                apply_theme(n);
+                current.set(n);
+            }>{move || current.get().icon()}</button>
+    }
 }
 
 #[component]
@@ -176,6 +224,7 @@ fn App() -> impl IntoView {
 
     view! {
         <div class="app">
+            <ThemeToggle/>
             <Form raw=raw/>
             {results}
             <Footer/>
