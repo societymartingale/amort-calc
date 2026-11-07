@@ -96,7 +96,7 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy dist --project-name=amort-calc --branch=${{ github.head_ref }} --commit-hash=${{ github.event.pull_request.head.sha }}
       - name: Post sticky preview comment
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           ALIAS_URL: ${{ steps.deploy.outputs.pages-deployment-alias-url }}
           DEPLOY_URL: ${{ steps.deploy.outputs.deployment-url }}
